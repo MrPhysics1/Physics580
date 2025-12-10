@@ -1,8 +1,7 @@
 # Physics580
 This is a repository for Physics 580 final project
 
-In this repository you will currently find 3 files: Phi_A78_jax, Filon_integration_project_580.py, and the project poster in a pdf.
-
+In this repository there are a few files that are used to help determine the image potential for the schrodinger equation. This project uses the filon method (https://en.wikipedia.org/wiki/Filon_quadrature) to solve for the integral analytically to better get results for fast oscillations.
 
 # Project Poster
 
