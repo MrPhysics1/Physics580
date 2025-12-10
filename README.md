@@ -5,7 +5,6 @@ In this repository you will currently find 3 files: Phi_A78_jax, Filon_integrati
 
 
 # Project Poster
-Project Abstract: Perovskites electronic properties can be better understood using a superlattice model and the Schrodinger's equation. V(𝜌) is calculated using Filon’s method and cubic fits gives results within 0.2% of the true value.
 
 [![Preview of the PDF](Carter%20Shirley%20Poster%20Resized%2036x48.png)](Carter%20Shirley%20Poster%20Resized%2036x48.pdf)
 
