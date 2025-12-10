@@ -3,6 +3,9 @@ This is a repository for Physics 580 final project
 
 In this repository there are a few files that are used to help determine the image potential for the schrodinger equation. This project uses the filon method (https://en.wikipedia.org/wiki/Filon_quadrature) to solve for the integral analytically to better get results for fast oscillations.
 
+Code Dependencies:
+pip install jax
+
 # Project Poster
 
 [![Preview of the PDF](Carter%20Shirley%20Poster%20Resized%2036x48.png)](Carter%20Shirley%20Poster%20Resized%2036x48.pdf)
