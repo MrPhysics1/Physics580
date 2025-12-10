@@ -3,6 +3,10 @@ This is a repository for Physics 580 final project
 
 In this repository you will currently find two files: Phi_A78_jax and Filon_integration_project_580.py.
 
+Project Abstract: Perovskites electronic properties can be better understood using a superlattice model and the Schrodinger's equation. V(𝜌) is calculated using Filon’s method and cubic fits gives results within 0.2% of the true value.
+
+
+
 # Phi_A78_jax.py 
 This is a file that makes up the equations that are mentioned inside the Muljarov paper equations 7-8 in the Appendix thus the name A78. This paper talks about image charges in a perovskite superlattices. Here is a link to the paper so that anybody who is interested in the paper can referance it here. 
 
