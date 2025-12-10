@@ -1,7 +1,6 @@
-import numpy as np
 import jax
 import jax.numpy as jnp
-from Phi_A78_jax import phi_A78
+# from Phi_A78_jax import phi_A78 # Only if you are using this in your f(x) function
 from jax.scipy.linalg import solve_triangular
 jax.config.update("jax_enable_x64", True)
 
@@ -11,7 +10,7 @@ HartE = 27.21139
 
 ''' 
 Using Filon method to integrate f(x) alongside the approximation for the bessel function 
-larger than 18.0711 of the J0(x).
+larger than x = 18.0711 of the J0(x). That is where the asymtotic relation works very well.
 '''
 
 # ---------- analytic integrals ----------
@@ -25,15 +24,13 @@ def poly_cos_definite(c, xa, xb, k, phi):
     Computed directly by evaluating antiderivative at both endpoints and subtracting
     to avoid catastrophic cancellation by computing differences directly.
     """
-
-
     c0, c1, c2, c3 = c[0], c[1], c[2], c[3]
     invk = 1.0 / k
     invk2 = invk * invk
     invk3 = invk2 * invk
     invk4 = invk3 * invk
     
-    # Evaluate trig functions at both endpoints
+    # Evaluate trig functions at both endpoints - This can be updated to work in the t-basis
     sa = jnp.sin(k * xa + phi)
     ca = jnp.cos(k * xa + phi)
     sb = jnp.sin(k * xb + phi)
@@ -67,31 +64,20 @@ def poly_sin_definite(c, xa, xb, k, phi):
     """
     return poly_cos_definite(c, xa, xb, k, phi - jnp.pi / 2.0)
 
-# ---------- cubic fit via rescaling ----------
-def unscale_cubic_matrix(a, L):
-    return jnp.array([
-        [1.0,      -a/L,        a*a/(L*L),      -(a**3)/(L**3)],
-        [0.0,       1.0/L,     -2*a/(L*L),      3*(a**2)/(L**3)],
-        [0.0,       0.0,        1.0/(L*L),      -3*a/(L**3)],
-        [0.0,       0.0,        0.0,            1.0/(L**3)],
-    ])
 
 # rescaling the QR decomposition to give us a better covariance matrix
 def fit_cubic_rescaled_qr(xs, ys):
-    # x_min = jnp.min(xs)
-    # x_max = jnp.max(xs)
-    # L = x_max - x_min
-    # t = (xs - x_min) / (L) 
-    t = jnp.linspace(0, 1, 5)
+    # Set up t values for the t-basis
+    t = jnp.linspace(0, 1 ,len(xs))
 
+    # computes X everytime, however in the t basis this can be created only once (Future work)
     X = jnp.stack([jnp.ones_like(t), t, t**2, t**3], axis=1)   # (n,4)
 
+    # QR decomposition (faster than other methods) - Make only once (future work)
     Q, R = jnp.linalg.qr(X, mode='reduced')
-    c = solve_triangular(R, Q.T @ ys)   # coefficients in t-basis (c0..c3)
-    # print(c)
-    # Not nessesary to bring back to original coordinate system
-    # c = unscale_cubic_matrix(x_min, L) @ c
-
+    
+    # Solve for coefficents
+    c = solve_triangular(R, Q.T @ ys)
     return c
 
 # ---------- one-period integrator ----------
@@ -105,9 +91,10 @@ def one_period_contribution(f, x0, period, m, phi, n_samples):
     # sample points (include both endpoints); use n_samples evenly spaced
     xs = x0 + jnp.linspace(0.0, period, n_samples)  # shape (n_samples,)
 
-    # evaluate f to get g and h
+    # evaluate f to get g and h - The y-axis components   
     gh = f(xs)  # expect shape (n_samples, 2) or tuple; we'll support returning tuple
-    # allow f to return tuple or stacked array
+    
+    # seperates the components
     if isinstance(gh, tuple) or isinstance(gh, list):
         g_vals = gh[0]
         h_vals = gh[1]
@@ -116,18 +103,16 @@ def one_period_contribution(f, x0, period, m, phi, n_samples):
         g_vals = gh[:, 0]
         h_vals = gh[:, 1]
 
+    # Finds te cubic fit in the t-basis
     cg = fit_cubic_rescaled_qr(xs, g_vals)  # (4,)
     ch = fit_cubic_rescaled_qr(xs, h_vals)  # (4,)
 
-    # analytic integrals
+    # analytic integrals - Bounds only needed for the sin and cosine part
     xa = x0
     xb = x0 + period
-    # analytic integrals
-    # xa = 0
-    # xb = period
     Ic = poly_cos_definite(cg, xa, xb, m, phi)
     Is = poly_sin_definite(ch, xa, xb, m, phi)
-    return (Ic + Is)
+    return Ic + Is
 
 # ---------- vectorized integrator for multiple b values ----------
 def compute_integral(b, x0, m, phi, n_samples, f_gh):
@@ -135,22 +120,31 @@ def compute_integral(b, x0, m, phi, n_samples, f_gh):
     Compute the Filon integration from x0 to b.
     All parameters are traced (vmap-compatible).
     """
+    # determine period length
     period = 2 * jnp.pi / m
+
+    # Determine integer number of periods
     n_periods = jnp.floor((b - x0) / period).astype(jnp.int64)
     
+    # Integral of a single period
     def one_period(x_start):
         return one_period_contribution(f_gh, x_start, period, m, phi, n_samples)
     
+    # Function to sum up all of the periods
     def body_fun(i, acc):
         x_start = x0 + i * period
         I = one_period(x_start)
         return acc + I
-    val = 0
-    for i in range(0, n_periods):
-        val = body_fun(i, val)
     
-    # return jax.lax.fori_loop(0, n_periods, body_fun, 0.0)
-    return val
+    # needed if you don't want jax.jit notation
+    # val = 0
+    # for i in range(0, n_periods):
+    #     val = body_fun(i, val)
+    # return val    
+
+    # Goes through and integrates every period and sums them up
+    return jax.lax.fori_loop(0, n_periods, body_fun, 0.0)
+
 
 # values in front of the cos approximation
 def A_of_x(x):
@@ -164,7 +158,7 @@ def B_of_x(x):
 
 def make_f_gh(r, zee, zhh, params):
     def f_gh(x):
-        f_base_value = 1#-e/(2*jnp.pi)*phi_A78(zee, zhh, x, params)*x
+        f_base_value = 1 #-e/(2*jnp.pi)*phi_A78(zee, zhh, x, params)*x # Enter function here <---------
         g = f_base_value * A_of_x(x*r)
         h = f_base_value * B_of_x(x*r)
         return (g, h)
@@ -176,43 +170,23 @@ def filon_integration(r, zee, zhh, params, q_up):
 
     # parameters
     phi = -jnp.pi / 4.0
-    x0 = 18.0710639679109225 / r     # start at 6th zero
+    x0 = 18.07106 / r     # start at 6th zero
     n_samples = 5
 
     # Choose ONE value of b
-    b = x0 + 1000*2*jnp.pi/r + 0.1/r    # for example one full period away
-    # b = q_up
-    # print(2*jnp.pi/r)
-    total_periods = (b - x0)/(2*jnp.pi/r)
-    print(total_periods)
+    num_periods = 1000
+    b = x0 + num_periods*2*jnp.pi/r + 0.1/r    # for example one full period away
+
     # JIT the single integrator
-    # compute_integral_single = jax.jit(
-    #     lambda b: compute_integral(b, x0, r, phi, n_samples, f_gh_func)
-    # )
+    compute_integral_single = jax.jit(
+        lambda b: compute_integral(b, x0, r, phi, n_samples, f_gh_func))
 
-    # # Warm-up
-    # _ = compute_integral_single(b)
+    # Warm-up
+    _ = compute_integral_single(b)
 
-    # # Compute the integral for one b
-    # I_single = compute_integral_single(b)
-
-    # print("Integral for one b =", I_single)
-
-    int_value = compute_integral(b, x0, r, phi, n_samples, f_gh_func)
-    print(int_value)
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # Compute the integral for one b
+    I_single = compute_integral_single(b)
+    print("Integral for one b =", I_single)
 
 
 # ---------- Example usage ----------
@@ -223,39 +197,3 @@ if __name__ == "__main__":
     zhh = 1
     params = jnp.array([6.15, 2.8, 6.41, 7.4, 0.111, 1.91/HartE])
     filon_integration(r, zee, zhh, params, qend)
-
-    # # parameters
-    # m = 600.0
-    # phi = -jnp.pi / 4.0
-    # # start at 6th zero of J0 (your value) - precision to 1e-5
-    # x0 = 18.0711/m
-    # n_samples = 7
-    
-    # # Create array of different b values to integrate over (1000 values)
-    # b_values = jnp.linspace(x0 + 2*jnp.pi/m, 20, 1000)
-    
-    # # Create vmapped integrator: maps over b_values
-    # # in_axes: (b_dim, static x0, static m, static phi, static n_samples, static f_gh)
-    # compute_integral_batch = jax.vmap(
-    #     lambda b: compute_integral(b, x0, m, phi, n_samples, f_gh),
-    #     in_axes=0  # b_values is axis 0
-    # )
-    
-    # # Compile once
-    # print("Compiling vmapped integrator...")
-    # compute_integral_batch_jitted = jax.jit(compute_integral_batch)
-    
-    # # Warm up JIT
-    # _ = compute_integral_batch_jitted(b_values[:10])
-    
-    # # Run 1000 integrations in parallel
-    # print("Computing 1000 integrals with different b values...")
-    # I_total_batch = compute_integral_batch_jitted(b_values)
-
-    # import matplotlib.pyplot as plt
-    # plt.plot(b_values, I_total_batch+0.001)
-    # plt.show()
-    
-
-
-
